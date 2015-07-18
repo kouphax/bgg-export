@@ -1,0 +1,100 @@
+---
+- name: install prerequisites
+  hosts: all
+  tasks:
+    - apt: update_cache=yes
+    - apt: pkg=unzip state=present
+
+- name: install java
+  hosts: all
+  tasks:
+    - apt_repository: repo='ppa:webupd8team/java' state=present
+    - apt: update_cache=yes
+    - shell: sudo echo oracle-java7-installer shared/accepted-oracle-license-v1-1 select true | sudo /usr/bin/debconf-set-selections
+    - apt: pkg=oracle-java7-installer state=present
+
+- name: install basex
+  hosts: all
+  vars:
+    basex_version: 8.2.2
+    basex_filename: BaseX{{ basex_version | regex_replace("\.", "") }}.zip
+    basex_config: |
+      DEBUG = false
+      DBPATH = /opt/data/basex
+      REPOPATH = /opt/basex/{{ basex_version }}/repo
+      LANG = English
+      LANGKEYS = false
+      GLOBALLOCK = false
+    basex_upstart: |
+      description "basex upstart"
+      start on startup
+      stop on shutdown
+      exec sudo /opt/basex/{{ basex_version }}/bin/basexserver -S
+  tasks:
+    - file: state=directory path=/opt/basex
+    - get_url:
+        url: http://files.basex.org/releases/{{ basex_version }}/{{ basex_filename }}
+        dest: /opt/basex/{{ basex_filename }}
+    - command: unzip {{ basex_filename }}  chdir=/opt/basex creates=/opt/basex/basex
+    - command: rm -rf /opt/basex/{{ basex_filename }} /opt/basex/{{ basex_version}}
+    - command: mv /opt/basex/basex /opt/basex/{{ basex_version }}
+    - copy:
+        content: "{{ basex_config }}"
+        dest: /opt/basex/{{ basex_version }}/.basex
+        owner: root
+        group: root
+        mode: 0644
+    - copy:
+        content: "{{ basex_upstart }}"
+        dest: /etc/init/basex.conf
+        owner: root
+        group: root
+        mode: 0644
+    - command: start basex
+
+- name: install neo4j
+  hosts: all
+  vars:
+    neo4j_version: 2.2.3
+    neo4j_properties: |
+      org.neo4j.server.database.location=/opt/data/graph
+      org.neo4j.server.webserver.address=0.0.0.0
+      org.neo4j.server.webserver.port=7474
+      org.neo4j.server.webserver.https.enabled=false
+      org.neo4j.server.webserver.https.port=7473
+      org.neo4j.server.webserver.https.cert.location=conf/ssl/snakeoil.cert
+      org.neo4j.server.webserver.https.key.location=conf/ssl/snakeoil.key
+      org.neo4j.server.webserver.https.keystore.location=data/keystore
+      org.neo4j.server.webadmin.rrdb.location=data/rrd
+      org.neo4j.server.webadmin.data.uri=/db/data/
+      org.neo4j.server.webadmin.management.uri=/db/manage/
+      org.neo4j.server.db.tuning.properties=conf/neo4j.properties
+      org.neo4j.server.manage.console_engines=shell
+      org.neo4j.server.http.log.enabled=false
+      org.neo4j.server.http.log.config=conf/neo4j-http-logging.xml
+      dbms.security.auth_enabled=false
+    neo4j_upstart: |
+      description "neo4j upstart"
+      start on startup
+      stop on shutdown
+      exec sudo /opt/neo4j/neo4j-community-{{ neo4j_version }}/bin/neo4j start
+  tasks:
+    - file: state=directory path=/opt/neo4j
+    - get_url:
+        url: http://dist.neo4j.org/neo4j-community-{{ neo4j_version }}-unix.tar.gz
+        dest: /opt/neo4j/neo4j-community-{{ neo4j_version }}-unix.tar.gz
+    - command: tar xvzf neo4j-community-{{ neo4j_version }}-unix.tar.gz chdir=/opt/neo4j
+    - command: rm -rf /opt/neo4j/neo4j-community-{{ neo4j_version }}-unix.tar.gz
+    - copy:
+        content: "{{ neo4j_properties }}"
+        dest: /opt/neo4j/neo4j-community-{{ neo4j_version }}/conf/neo4j-server.properties
+        owner: root
+        group: root
+        mode: 0644
+    - copy:
+        content: "{{ neo4j_upstart }}"
+        dest: /etc/init/neo4j.conf
+        owner: root
+        group: root
+        mode: 0644
+    - command: start neo4j
