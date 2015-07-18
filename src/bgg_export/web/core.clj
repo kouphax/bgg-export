@@ -6,33 +6,16 @@
             [com.stuartsierra.component :as component]
             [metrics.core               :as metrics  ]
 
-            [metrics.gauges        :refer [gauge-fn]]
-            [metrics.meters        :refer [defmeter mark!]]
-            [compojure.core        :refer [defroutes GET POST]]
-            [metrics.ring.expose   :refer [expose-metrics-as-json]]
-            [bgg-export.config     :refer [system-config]]
-            [bgg-export.downloader :refer [new-downloader]])
+            [compojure.core          :refer [defroutes GET POST]]
+            [metrics.ring.expose     :refer [expose-metrics-as-json]]
+            [bgg-export.config       :refer [system-config]]
+            [bgg-export.downloader   :refer [new-downloader]]
+            [bgg-export.metrics.core :refer [new-queue-status-reporter]])
   (:gen-class))
 
 ; we sort of do this stuff about the place in config too, perhaps we should
 ; make this a thing somewhere like mate
 (def queues [:page-queue :id-queue :index-queue :graph-queue])
-
-(defrecord QueueStatusReporter [queue-manager metrics-registry]
-  component/Lifecycle
-  (start [this]
-    (timbre/info "Building queue status reporter gauges")
-    (doseq [queue queues]
-      (gauge-fn
-        metrics-registry
-        (name queue)
-        (fn [] (-> queue-manager
-                   (util/get-stats-for-queue queue)
-                   (util/calculate-remaining-items-in-queue))))))
-  (stop [this]))
-
-(defn new-queue-status-reporter []
-  (map->QueueStatusReporter {}))
 
 (defn index []
   (page/html5
@@ -66,7 +49,7 @@
           :queue-manager         (util/queue-manager (system-config :queues-path))
           :metrics-registry      (metrics/new-registry)
           :queue-status-reporter (component/using
-                                   (new-queue-status-reporter)
+                                   (new-queue-status-reporter queues)
                                    [:queue-manager :metrics-registry])
           :web                   (component/using
                                    (new-dashboard 1337)
